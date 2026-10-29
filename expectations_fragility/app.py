@@ -58,12 +58,11 @@ st.header('Real earnings data · Alpha Vantage')
 st.write('Fetch historical reported and estimated EPS for a ticker. Data availability depends on the free API plan and provider limits. This is an exploratory data viewer, not yet a validated EFI score.')
 with st.form('alpha_fetch'):
     symbol = st.text_input('Ticker', value='AAPL').strip().upper()
-    secret = st.text_input('Alpha Vantage API key (kept out of exports)', type='password', help='For deployment, configure ALPHA_VANTAGE_API_KEY in Streamlit secrets. Never commit it to GitHub.')
     fetch = st.form_submit_button('Fetch real earnings')
 if fetch:
     from data_sources import earnings
     try:
-        api_key = secret or st.secrets.get('ALPHA_VANTAGE_API_KEY','')
+        api_key = st.secrets.get('ALPHA_VANTAGE_API_KEY', '')
         with st.spinner('Retrieving earnings history...'):
             historical = earnings(symbol, api_key)
         st.success(f'{len(historical)} quarterly earnings records retrieved for {symbol}.')
