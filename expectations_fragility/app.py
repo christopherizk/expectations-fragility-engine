@@ -320,7 +320,7 @@ if "market_events" in st.session_state:
     c3.metric(
     "Mean window abnormal return",
     f"{events['abnormal_return_pct'].mean():.2f}%",
-)
+
     )
 
     st.subheader(
