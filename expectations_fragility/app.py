@@ -406,4 +406,18 @@ else:
         "above to activate the research dashboard."
     )
 
-    
+st.divider()
+
+from efi_pre_event import render_efi_pre_event
+
+if "market_events" in st.session_state:
+    render_efi_pre_event(
+        st.session_state["market_events"]
+    )
+else:
+    st.info(
+        "Run the multi-company market reaction "
+        "analysis to activate EFI v0.8."
+    )
+
+
