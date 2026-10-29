@@ -392,4 +392,19 @@ st.warning(
     "interpreting results."
 )
 
+st.divider()
+st.header("Research Analytics · v0.7")
+
+from reaction_intelligence import render_reaction_intelligence
+
+if "market_events" in st.session_state:
+    render_reaction_intelligence(
+        st.session_state["market_events"]
+    )
+else:
+    st.info(
+        "Run the Multi-Company Market Reactions analysis "
+        "above to activate the research dashboard."
+    )
+
     
