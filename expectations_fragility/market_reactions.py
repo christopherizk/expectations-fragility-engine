@@ -1,56 +1,77 @@
 
-"""Exploratory earnings-event market reaction analysis."""
+"""Exploratory multi-company earnings event study.
+
+Price source: Yahoo Finance via yfinance.
+Earnings source: Alpha Vantage (handled separately).
+
+Returns are proxies, not timestamp-verified earnings reactions.
+"""
 
 import pandas as pd
-import requests
 import streamlit as st
-
-BASE = "https://www.alphavantage.co/query"
+import yfinance as yf
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def daily_prices(ticker: str, _api_key: str) -> pd.DataFrame:
-    """Retrieve available daily prices from Alpha Vantage."""
-    response = requests.get(
-        BASE,
-        params={
-            "function": "TIME_SERIES_DAILY",
-            "symbol": ticker,
-            "outputsize": "compact",
-            "apikey": _api_key,
-        },
-        timeout=30,
+def daily_prices(ticker: str, _api_key: str = "") -> pd.DataFrame:
+    """Retrieve approximately 10 years of adjusted daily prices.
+
+    The optional _api_key preserves compatibility with the
+    existing app.py call signature; it is not sent to Yahoo.
+    """
+    ticker = ticker.strip().upper()
+
+    if not ticker:
+        raise ValueError("A stock ticker is required.")
+
+    data = yf.download(
+        ticker,
+        period="10y",
+        interval="1d",
+        auto_adjust=True,
+        progress=False,
+        threads=False,
     )
-    response.raise_for_status()
-    payload = response.json()
 
-    if "Note" in payload or "Information" in payload:
-        raise RuntimeError(
-            f"{ticker}: API limit or plan restriction."
-        )
-
-    series = payload.get("Time Series (Daily)")
-    if not series:
+    if data is None or data.empty:
         raise ValueError(
-            f"{ticker}: daily price data unavailable."
+            f"{ticker}: no historical price data available."
         )
 
-    frame = pd.DataFrame.from_dict(
-        series, orient="index"
-    )
+    close = data["Close"]
+
+    # yfinance versions may return MultiIndex columns.
+    if isinstance(close, pd.DataFrame):
+        if close.shape[1] != 1:
+            raise ValueError(
+                f"{ticker}: unexpected price data structure."
+            )
+        close = close.iloc[:, 0]
+
+    frame = pd.DataFrame({
+        "close": pd.to_numeric(close, errors="coerce")
+    })
 
     frame.index = pd.to_datetime(frame.index)
+
+    if frame.index.tz is not None:
+        frame.index = frame.index.tz_localize(None)
+
+    frame.index = frame.index.normalize()
     frame.index.name = "date"
 
-    frame["close"] = pd.to_numeric(
-        frame["4. close"], errors="coerce"
+    frame = (
+        frame.dropna()
+        .sort_index()
+        .loc[lambda x: ~x.index.duplicated(keep="last")]
     )
 
-    return (
-        frame[["close"]]
-        .dropna()
-        .sort_index()
-    )
+    if len(frame) < 3:
+        raise ValueError(
+            f"{ticker}: insufficient daily price history."
+        )
+
+    return frame
 
 
 def build_event_study(
@@ -59,26 +80,42 @@ def build_event_study(
     benchmark_prices: pd.DataFrame,
     ticker: str,
 ) -> pd.DataFrame:
-    """Calculate indicative close-to-close event returns.
+    """Calculate two provisional event-window return measures.
 
-    This is not a timestamp-verified earnings reaction.
+    Same-day proxy:
+        Previous close to announcement-date close, when
+        the announcement date is a trading session.
+
+    Next-day proxy:
+        Previous close to the first trading-session close
+        strictly after the announcement date.
+
+    These are alternative windows, not verified reactions.
     """
 
     events = earnings_data.copy()
+
     events["reportedDate"] = pd.to_datetime(
-        events["reportedDate"], errors="coerce"
-    )
+        events["reportedDate"],
+        errors="coerce",
+    ).dt.normalize()
 
     stock = stock_prices["close"].rename("stock_close")
-    benchmark = benchmark_prices["close"].rename("spy_close")
+    spy = benchmark_prices["close"].rename("spy_close")
 
     prices = pd.concat(
-        [stock, benchmark], axis=1, join="inner"
+        [stock, spy],
+        axis=1,
+        join="inner",
     ).dropna().sort_index()
+
+    if len(prices) < 3:
+        return pd.DataFrame()
 
     prices["stock_return_pct"] = (
         prices["stock_close"].pct_change() * 100
     )
+
     prices["market_return_pct"] = (
         prices["spy_close"].pct_change() * 100
     )
@@ -96,41 +133,89 @@ def build_event_study(
         if pd.isna(announcement):
             continue
 
-        # The next trading day is a provisional event
-        # window, not a verified earnings-reaction window.
-        eligible = prices.index[
-            prices.index > announcement
-        ]
+        # Require a trading session on or after the
+        # reported announcement date.
+        positions = prices.index.searchsorted(
+            announcement, side="left"
+        )
 
-        if len(eligible) == 0:
+        if positions >= len(prices):
             continue
 
-        event_day = eligible[0]
+        same_day_pos = positions
 
-        if (event_day - announcement).days > 5:
+        # First trading session strictly after the date.
+        next_day_pos = prices.index.searchsorted(
+            announcement, side="right"
+        )
+
+        if next_day_pos >= len(prices):
             continue
 
-        observation = prices.loc[event_day]
+        same_day = prices.index[same_day_pos]
+        next_day = prices.index[next_day_pos]
 
-        if pd.isna(observation["abnormal_return_pct"]):
+        # Reject events outside the available price range.
+        if announcement < prices.index[0]:
             continue
+
+        if (same_day - announcement).days > 5:
+            continue
+
+        if (next_day - announcement).days > 7:
+            continue
+
+        # For the next-day proxy, use the close before
+        # the announcement-date session when available.
+        start_pos = same_day_pos - 1
+
+        if start_pos < 0:
+            continue
+
+        start = prices.iloc[start_pos]
+        end = prices.iloc[next_day_pos]
+
+        stock_window_return = (
+            end["stock_close"] / start["stock_close"] - 1
+        ) * 100
+
+        market_window_return = (
+            end["spy_close"] / start["spy_close"] - 1
+        ) * 100
+
+        window_abnormal = (
+            stock_window_return - market_window_return
+        )
+
+        same_day_abnormal = None
+
+        if same_day == announcement:
+            same_day_abnormal = prices.iloc[
+                same_day_pos
+            ]["abnormal_return_pct"]
 
         records.append({
             "ticker": ticker,
             "announcement_date": announcement,
-            "proxy_reaction_date": event_day,
+            "proxy_reaction_date": next_day,
             "earnings_surprise_pct": event.get(
                 "surprisePercentage"
             ),
-            "stock_return_pct": observation[
-                "stock_return_pct"
-            ],
-            "market_return_pct": observation[
-                "market_return_pct"
-            ],
-            "abnormal_return_pct": observation[
-                "abnormal_return_pct"
-            ],
+            "stock_return_pct": stock_window_return,
+            "market_return_pct": market_window_return,
+            "abnormal_return_pct": window_abnormal,
+            "same_day_abnormal_return_pct": (
+                same_day_abnormal
+            ),
+            "window_start_close_date": (
+                prices.index[start_pos]
+            ),
+            "window_end_close_date": next_day,
         })
 
-    return pd.DataFrame(records)
+    if not records:
+        return pd.DataFrame()
+
+    return pd.DataFrame(records).sort_values(
+        "announcement_date"
+    ).reset_index(drop=True)
