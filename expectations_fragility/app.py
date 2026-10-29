@@ -380,12 +380,15 @@ if "market_events" in st.session_state:
         file_name="efi_market_reactions.csv",
         mime="text/csv",
     )
+    
+st.warning(
+    "Research limitations: prices are adjusted daily closes "
+    "from Yahoo Finance. Abnormal returns are stock returns "
+    "minus SPY returns over provisional event windows. "
+    "Announcement timestamps have not been verified. "
+    "These are not isolated or causal earnings reactions. "
+    "Coverage and data quality must be checked before "
+    "interpreting results."
+)
 
-    st.warning(
-        "Research limitation: returns are provisional "
-        "next-trading-day close-to-close proxies, "
-        "not verified earnings reactions. "
-        "The price series is not adjusted for "
-        "corporate actions. Historical coverage "
-        "may be very limited."
     )
