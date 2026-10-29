@@ -198,3 +198,194 @@ if "earnings_data" in st.session_state:
         "EFI validation requires pre-announcement features "
         "and market-adjusted event returns."
     )
+
+
+st.divider()
+st.header("Multi-Company Market Reactions · v0.4")
+
+st.caption(
+    "Exploratory analysis using daily stock prices and "
+    "earnings announcements. Event timing is not verified."
+)
+
+from market_reactions import (
+    daily_prices,
+    build_event_study,
+)
+
+companies = st.multiselect(
+    "Select companies",
+    ["AAPL", "NVDA", "MSFT", "TSLA", "AMZN"],
+    default=["AAPL", "NVDA"],
+)
+
+run_study = st.button("Run market reaction analysis")
+
+if run_study:
+    if not companies:
+        st.warning("Select at least one company.")
+    else:
+        api_key = st.secrets.get(
+            "ALPHA_VANTAGE_API_KEY", ""
+        )
+
+        if not api_key:
+            st.error("Alpha Vantage is not configured.")
+        else:
+            from data_sources import earnings
+
+            all_events = []
+
+            try:
+                with st.spinner(
+                    "Retrieving SPY benchmark prices..."
+                ):
+                    benchmark = daily_prices(
+                        "SPY", api_key
+                    )
+
+                for ticker in companies:
+                    try:
+                        with st.spinner(
+                            f"Analyzing {ticker}..."
+                        ):
+                            eps_data = earnings(
+                                ticker, api_key
+                            )
+
+                            prices = daily_prices(
+                                ticker, api_key
+                            )
+
+                            events = build_event_study(
+                                eps_data,
+                                prices,
+                                benchmark,
+                                ticker,
+                            )
+
+                        if not events.empty:
+                            all_events.append(events)
+                        else:
+                            st.warning(
+                                f"{ticker}: no matching "
+                                "events in available "
+                                "price history."
+                            )
+
+                    except Exception as exc:
+                        st.warning(
+                            f"{ticker}: {exc}"
+                        )
+
+                if all_events:
+                    st.session_state[
+                        "market_events"
+                    ] = pd.concat(
+                        all_events,
+                        ignore_index=True,
+                    )
+                else:
+                    st.session_state.pop(
+                        "market_events", None
+                    )
+                    st.info(
+                        "No matched events available."
+                    )
+
+            except Exception as exc:
+                st.error(
+                    f"Benchmark retrieval failed: {exc}"
+                )
+
+if "market_events" in st.session_state:
+    events = st.session_state[
+        "market_events"
+    ].copy()
+
+    st.subheader("Event Study Summary")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "Matched events",
+        len(events),
+    )
+
+    c2.metric(
+        "Companies",
+        events["ticker"].nunique(),
+    )
+
+    c3.metric(
+        "Mean proxy abnormal return",
+        f"{events['abnormal_return_pct'].mean():.2f}%",
+    )
+
+    st.subheader(
+        "Earnings Surprise vs. Abnormal Return"
+    )
+
+    plot_data = events.dropna(
+        subset=[
+            "earnings_surprise_pct",
+            "abnormal_return_pct",
+        ]
+    )
+
+    if not plot_data.empty:
+        st.scatter_chart(
+            plot_data,
+            x="earnings_surprise_pct",
+            y="abnormal_return_pct",
+            color="ticker",
+        )
+    else:
+        st.info(
+            "No observations available for "
+            "the scatter chart."
+        )
+
+    st.subheader("Company Comparison")
+
+    summary = events.groupby(
+        "ticker"
+    ).agg(
+        events=("ticker", "size"),
+        mean_abnormal_return_pct=(
+            "abnormal_return_pct", "mean"
+        ),
+        median_abnormal_return_pct=(
+            "abnormal_return_pct", "median"
+        ),
+    ).reset_index()
+
+    st.dataframe(
+        summary,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Event-Level Observations")
+
+    st.dataframe(
+        events,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.download_button(
+        "Download event study (CSV)",
+        events.to_csv(index=False),
+        file_name="efi_market_reactions.csv",
+        mime="text/csv",
+    )
+
+    st.warning(
+        "Research limitation: returns are provisional "
+        "next-trading-day close-to-close proxies, "
+        "not verified earnings reactions. "
+        "The price series is not adjusted for "
+        "corporate actions. Historical coverage "
+        "may be very limited."
+    )
