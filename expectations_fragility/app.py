@@ -393,7 +393,6 @@ st.warning(
 )
 
 st.divider()
-st.header("Research Analytics · v0.7")
 
 from reaction_intelligence import render_reaction_intelligence
 
