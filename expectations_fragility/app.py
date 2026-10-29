@@ -53,21 +53,148 @@ if uploaded:
 else:
     st.info('No dataset loaded. The application does not invent historical observations or present synthetic results as evidence.')
 
+
 st.divider()
-st.header('Real earnings data · Alpha Vantage')
-st.write('Fetch historical reported and estimated EPS for a ticker. Data availability depends on the free API plan and provider limits. This is an exploratory data viewer, not yet a validated EFI score.')
-with st.form('alpha_fetch'):
-    symbol = st.text_input('Ticker', value='AAPL').strip().upper()
-    fetch = st.form_submit_button('Fetch real earnings')
+st.header("Earnings Intelligence · v0.3")
+
+st.caption(
+    "Historical earnings analysis powered by Alpha Vantage. "
+    "Reported observations, not investment forecasts."
+)
+
+with st.form("alpha_fetch"):
+    symbol = st.text_input(
+        "Stock ticker",
+        value="AAPL",
+        help="Examples: AAPL, NVDA, MSFT, TSLA, AMZN",
+    ).strip().upper()
+
+    fetch = st.form_submit_button("Analyze earnings")
+
 if fetch:
     from data_sources import earnings
+
     try:
-        api_key = st.secrets.get('ALPHA_VANTAGE_API_KEY', '')
-        with st.spinner('Retrieving earnings history...'):
-            historical = earnings(symbol, api_key)
-        st.success(f'{len(historical)} quarterly earnings records retrieved for {symbol}.')
-        st.dataframe(historical, use_container_width=True, hide_index=True)
-        st.download_button('Download earnings CSV', historical.to_csv(index=False), file_name=f'{symbol}_earnings.csv', mime='text/csv')
-        st.info('Important: this earnings dataset alone cannot validate EFI. We still need pre-event valuation features, reliable announcement timestamps, and market-adjusted event returns. Free coverage may be limited.')
+        api_key = st.secrets.get("ALPHA_VANTAGE_API_KEY", "")
+
+        if not api_key:
+            st.error("The earnings data service is not configured.")
+        else:
+            with st.spinner("Retrieving historical earnings..."):
+                historical = earnings(symbol, api_key)
+
+            st.session_state["earnings_data"] = historical
+            st.session_state["earnings_symbol"] = symbol
+
     except Exception as exc:
-        st.error(f'Data retrieval failed: {exc}')
+        st.error(f"Data retrieval failed: {exc}")
+
+if "earnings_data" in st.session_state:
+    historical = st.session_state["earnings_data"].copy()
+    active_symbol = st.session_state["earnings_symbol"]
+
+    st.subheader(f"{active_symbol} · Earnings overview")
+
+    valid = historical.dropna(
+        subset=["reportedEPS", "estimatedEPS"]
+    ).copy()
+
+    valid["eps_difference"] = (
+        valid["reportedEPS"] - valid["estimatedEPS"]
+    )
+
+    beats = int((valid["eps_difference"] > 0).sum())
+    misses = int((valid["eps_difference"] < 0).sum())
+    matches = int((valid["eps_difference"] == 0).sum())
+
+    total = len(valid)
+    beat_rate = (beats / total * 100) if total else 0
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Quarters analyzed", total)
+    c2.metric("EPS beats", beats)
+    c3.metric("EPS misses", misses)
+    c4.metric("Historical beat rate", f"{beat_rate:.1f}%")
+
+    st.caption(
+        f"{matches} quarters matched analyst estimates exactly. "
+        "Beat rate uses quarters with both reported and estimated EPS."
+    )
+
+    st.subheader("Reported EPS vs. Analyst Estimates")
+
+    if not valid.empty:
+        eps_chart = valid.set_index("reportedDate")[
+            ["reportedEPS", "estimatedEPS"]
+        ].rename(
+            columns={
+                "reportedEPS": "Reported EPS",
+                "estimatedEPS": "Estimated EPS",
+            }
+        )
+
+        st.line_chart(
+            eps_chart,
+            x_label="Earnings report date",
+            y_label="EPS",
+        )
+    else:
+        st.info("No comparable EPS observations are available.")
+
+    st.subheader("Historical Earnings Surprises")
+
+    surprise_data = historical.dropna(
+        subset=["surprisePercentage", "reportedDate"]
+    ).copy()
+
+    if not surprise_data.empty:
+        surprise_chart = surprise_data.set_index(
+            "reportedDate"
+        )[["surprisePercentage"]].rename(
+            columns={
+                "surprisePercentage": "EPS surprise (%)"
+            }
+        )
+
+        st.bar_chart(
+            surprise_chart,
+            x_label="Earnings report date",
+            y_label="EPS surprise (%)",
+        )
+
+        st.caption(
+            "Surprise percentages are supplied by Alpha Vantage. "
+            "Large percentages can occur when estimated EPS "
+            "is close to zero."
+        )
+    else:
+        st.info("No earnings surprise percentages are available.")
+
+    st.subheader("Historical Earnings Records")
+
+    display = historical.sort_values(
+        "reportedDate",
+        ascending=False,
+    )
+
+    st.dataframe(
+        display,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.download_button(
+        "Download earnings dataset (CSV)",
+        historical.to_csv(index=False),
+        file_name=f"{active_symbol}_earnings.csv",
+        mime="text/csv",
+    )
+
+    st.info(
+        "These statistics describe historical EPS results. "
+        "They do not establish whether a stock was attractively "
+        "valued or predict its reaction to future announcements. "
+        "EFI validation requires pre-announcement features "
+        "and market-adjusted event returns."
+    )
