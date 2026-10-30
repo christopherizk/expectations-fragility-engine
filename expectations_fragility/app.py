@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-st.set_page_config(page_title="EFL | Expectations Fragility Lab", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="EFL | Expectations Fragility Lab", page_icon="E", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -45,6 +45,40 @@ with st.sidebar:
     st.caption("US equities · 5 companies · Fixed research snapshot")
     st.caption("Exploratory analysis · Not investment advice")
 
+
+# Aggregated per-company figures computed from the existing 196-event v0.8 research export.
+# No event-level provider data is distributed with this app.
+COMPANY_SNAPSHOT = {'AAPL': {'beat_events': 37,
+          'beat_negative_rate': np.float64(37.8),
+          'events': 39,
+          'mean_return': np.float64(1.21),
+          'median_return': np.float64(1.95),
+          'negative_rate': np.float64(38.5)},
+ 'AMZN': {'beat_events': 29,
+          'beat_negative_rate': np.float64(41.4),
+          'events': 39,
+          'mean_return': np.float64(0.66),
+          'median_return': np.float64(-0.1),
+          'negative_rate': np.float64(51.3)},
+ 'MSFT': {'beat_events': 36,
+          'beat_negative_rate': np.float64(41.7),
+          'events': 39,
+          'mean_return': np.float64(0.79),
+          'median_return': np.float64(1.06),
+          'negative_rate': np.float64(43.6)},
+ 'NVDA': {'beat_events': 35,
+          'beat_negative_rate': np.float64(45.7),
+          'events': 39,
+          'mean_return': np.float64(1.15),
+          'median_return': np.float64(0.75),
+          'negative_rate': np.float64(48.7)},
+ 'TSLA': {'beat_events': 22,
+          'beat_negative_rate': np.float64(54.5),
+          'events': 40,
+          'mean_return': np.float64(-0.77),
+          'median_return': np.float64(-2.12),
+          'negative_rate': np.float64(57.5)}}
+
 if page=="Overview":
     st.markdown('<div class="efl-kicker">RESEARCH NOTE 001  /  OCTOBER 2026</div>',unsafe_allow_html=True)
     st.markdown('<div class="efl-hero"><h1>When earnings beats fail to impress the market.</h1><div class="efl-deck">An independent study of earnings surprises, market-adjusted returns and whether pre-event market conditions help explain negative reactions.</div></div>',unsafe_allow_html=True)
@@ -65,33 +99,48 @@ if page=="Overview":
         st.bar_chart(rates,horizontal=True,color="#81A8D1")
         st.caption("59 later-period events · 22 higher-score, 37 lower-score")
     st.markdown('<div class="efl-tiny">SNAPSHOT: 198 event-study observations; 196 usable pre-event observations. Earnings timing and event windows remain provisional.</div>',unsafe_allow_html=True)
-    st.info("Use **Company explorer** to inspect the research sample, or **Model validation** to examine the holdout test. No file upload is required to read the published findings.")
+    st.info("Open **Company explorer** to compare five equities using historical research results, or **Model validation** to examine the holdout test. No upload required.")
 
 elif page=="Company explorer":
     st.markdown('<div class="efl-kicker">RESEARCH TERMINAL / COMPANY EXPLORER</div>',unsafe_allow_html=True)
-    st.title("Explore the equity universe")
-    st.caption("AAPL · NVDA · MSFT · TSLA · AMZN | Source-backed historical analysis is available in the advanced workbench.")
-    selected=st.selectbox("Company",["AAPL — Apple","NVDA — NVIDIA","MSFT — Microsoft","TSLA — Tesla","AMZN — Amazon"])
-    ticker=selected.split(" ")[0]
-    st.markdown('<div class="efl-panel"><div class="eyebrow">SELECTED EQUITY / '+ticker+'</div><div class="big">Historical earnings research</div><div class="small">The public overview contains aggregated results only. For event-level company comparisons, load your own v0.8 research export below. We do not invent per-company statistics or redistribute provider-derived observations.</div></div>',unsafe_allow_html=True)
-    with st.expander("Open interactive company research",expanded=True):
-        uploaded=st.file_uploader("Optional: upload v0.8 research CSV",type="csv",key="explorer_csv")
+    st.title("Explore earnings reactions")
+    st.caption("Historical company summaries calculated from the 196-event v0.8 research snapshot. No upload required.")
+    company_names={"AAPL":"Apple","NVDA":"NVIDIA","MSFT":"Microsoft","TSLA":"Tesla","AMZN":"Amazon"}
+    selected=st.selectbox("SELECT EQUITY",list(company_names),format_func=lambda t:f"{t}  /  {company_names[t]}")
+    r=COMPANY_SNAPSHOT[selected]
+    st.markdown(f'<div class="efl-panel"><div class="eyebrow">{selected} / {company_names[selected].upper()}</div><div class="big">Earnings reaction profile</div><div class="small">Descriptive historical statistics, not a forecast. Returns are SPY-adjusted over provisional event windows.</div></div>',unsafe_allow_html=True)
+    a,b,c,dcol=st.columns(4)
+    a.metric("Events analyzed",r["events"])
+    b.metric("Negative reactions",f'{r["negative_rate"]:.1f}%')
+    c.metric("EPS beats",r["beat_events"])
+    dcol.metric("Beats with negative returns",f'{r["beat_negative_rate"]:.1f}%')
+    left,right=st.columns([1.25,1],gap="large")
+    with left:
+        st.markdown('<div class="efl-sect">01 / CROSS-COMPANY COMPARISON</div>',unsafe_allow_html=True)
+        metric=st.radio("Compare companies by",["EPS beats followed by negative returns","All events with negative returns"],horizontal=True)
+        field="beat_negative_rate" if metric.startswith("EPS") else "negative_rate"
+        compare=pd.DataFrame([{"Ticker":t,"Negative reactions (%)":v[field]} for t,v in COMPANY_SNAPSHOT.items()]).set_index("Ticker")
+        st.bar_chart(compare,horizontal=True,color="#81A8D1")
+        st.caption("Each company has a different sample composition. Differences are descriptive, not statistically tested.")
+    with right:
+        st.markdown('<div class="efl-sect">02 / RETURN PROFILE</div>',unsafe_allow_html=True)
+        st.metric("Mean abnormal return",f'{r["mean_return"]:+.2f}%')
+        st.metric("Median abnormal return",f'{r["median_return"]:+.2f}%')
+        st.markdown('<div class="efl-sect">HOW TO READ THIS</div>',unsafe_allow_html=True)
+        st.write("A negative abnormal return means the stock underperformed SPY over the provisional event window. It does not establish that earnings caused the decline.")
+    with st.expander("Optional / inspect individual events from your own research CSV"):
+        uploaded=st.file_uploader("Upload v0.8 research CSV",type="csv",key="explorer_csv")
         if uploaded is not None:
             from efi_v1_showcase import _load
             try:
                 data=_load(uploaded)
-                view=data[data["ticker"]==ticker]
+                view=data[data["ticker"]==selected]
                 if view.empty: st.warning("No observations for this ticker in the uploaded file.")
                 else:
-                    a,b,c=st.columns(3)
-                    a.metric("Events",len(view))
-                    b.metric("Negative return frequency",f'{(view["abnormal_return_pct"]<0).mean()*100:.1f}%')
-                    c.metric("Mean abnormal return",f'{view["abnormal_return_pct"].mean():+.2f}%')
                     st.scatter_chart(view,x="earnings_surprise_pct",y="abnormal_return_pct")
                     st.dataframe(view[["announcement_date","earnings_surprise_pct","abnormal_return_pct","prototype_fragility_score","split"]],hide_index=True,use_container_width=True)
             except Exception as exc: st.error(f"Unable to read CSV: {exc}")
-        else:
-            st.caption("No file needed for the overview. Event-level exploration is optional.")
+    st.markdown('<div class="efl-tiny">SOURCE: v0.8 RESEARCH EXPORT · 196 USABLE EVENTS · AGGREGATED METRICS ONLY · PROVISIONAL TIMING</div>',unsafe_allow_html=True)
 
 elif page=="Model validation":
     st.markdown('<div class="efl-kicker">RESEARCH TERMINAL / MODEL VALIDATION</div>',unsafe_allow_html=True)
