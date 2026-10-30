@@ -421,3 +421,9 @@ else:
     )
 
 
+st.divider()
+
+from efi_v1_showcase import render_efi_showcase
+
+render_efi_showcase()
+
