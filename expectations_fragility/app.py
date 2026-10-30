@@ -1,6 +1,13 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+
+
+from efi_v1_showcase import render_efi_showcase
+
+render_efi_showcase()
+
+st.divider()
 st.set_page_config(page_title='Expectations Fragility Lab',layout='wide')
 st.title('Expectations Fragility Lab')
 st.caption('Research prototype · scenario exploration only · no predictive claims')
@@ -420,10 +427,4 @@ else:
         "analysis to activate EFI v0.8."
     )
 
-
-st.divider()
-
-from efi_v1_showcase import render_efi_showcase
-
-render_efi_showcase()
 
