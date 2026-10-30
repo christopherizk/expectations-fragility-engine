@@ -6,6 +6,7 @@ research workspace and earlier experiments remain accessible separately.
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+import numpy as np
 
 st.set_page_config(page_title="EFL | Expectations Fragility Lab", page_icon="E", layout="wide", initial_sidebar_state="expanded")
 
