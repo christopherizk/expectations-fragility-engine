@@ -23,6 +23,8 @@ h1,h2,h3{letter-spacing:-.035em!important}h1{font-size:clamp(2rem,3vw,3.1rem)!im
 [data-testid="stSelectbox"]>div>div{background:#132131!important;border-color:#38516a!important}
 [data-testid="stDataFrame"],[data-testid="stExpander"],[data-testid="stFileUploader"]{border-color:#30465d!important;border-radius:4px!important}
 [data-testid="stExpander"] summary p{white-space:normal!important;overflow-wrap:anywhere!important}
+[data-testid="stToggle"] label p{white-space:normal!important;overflow-wrap:anywhere!important;font-size:.88rem!important}
+[data-testid="stSelectbox"] label p{font-size:.86rem!important}
 [data-testid="stSidebarCollapseButton"] span,[data-testid="stSidebarCollapsedControl"] span{font-size:0!important}
 [data-testid="stSidebarCollapseButton"] span::after,[data-testid="stSidebarCollapsedControl"] span::after{content:'‹';font-family:Arial,sans-serif;font-size:22px!important;color:#c7d5e4}
 .stButton>button{background:#15293d;border:1px solid #476582;border-radius:3px;color:#eaf1f9}
@@ -83,7 +85,7 @@ with st.sidebar:
     st.markdown('<div class="efl-brand">E<b>|</b>F<b>|</b>L</div>',unsafe_allow_html=True)
     st.caption('EXPECTATIONS FRAGILITY LAB')
     st.divider()
-    page=st.radio('RESEARCH TERMINAL',['Overview','Company explorer','Model validation','Methodology','Advanced workbench'])
+    page=st.radio('RESEARCH TERMINAL',['Overview','Company explorer','Model validation','Methodology'])
     st.divider()
     st.caption('INDEPENDENT EQUITY RESEARCH')
     st.caption('Five US equities · historical sample')
@@ -134,11 +136,12 @@ elif page=='Company explorer':
         section('01 / EARNINGS SURPRISE VS. MARKET REACTION')
         st.write('Each point is one historical earnings event. Hover to inspect the event date, EPS surprise and SPY-adjusted return.')
         filtered=group.copy()
-        col1,col2=st.columns([1,1])
+        col1,col2=st.columns([1.25,1],gap='large')
         with col1:
             sample=st.selectbox('OBSERVATION PERIOD',['All events','Training','Later holdout'])
         with col2:
-            cap=st.checkbox('Exclude absolute EPS surprises above 100%',value=False)
+            st.markdown('<div class="efl-eyebrow">OUTLIER FILTER</div>',unsafe_allow_html=True)
+            cap=st.toggle('Exclude extreme EPS surprises (±100%)',value=False,help='Remove observations where the absolute EPS surprise exceeds 100%.')
         if sample!='All events':
             filtered=filtered[filtered.split.eq('training' if sample=='Training' else 'holdout')]
         if cap:
@@ -166,7 +169,7 @@ elif page=='Company explorer':
             y.metric('Median abnormal return',f'{group.abnormal_return_pct.median():+.2f}%')
             note('Negative abnormal returns indicate underperformance versus SPY, not necessarily an absolute stock-price decline.')
             note('These five selected stocks have small, dependent samples. Comparisons are descriptive, not rankings of future risk.')
-        with st.expander('RESEARCH DATA / View historical event observations'):
+        with st.expander('View historical event observations'):
             cols=['announcement_date','earnings_surprise_pct','abnormal_return_pct','momentum_20d_pct','downside_rms_60d_pp','split']
             st.dataframe(group[cols].sort_values('announcement_date',ascending=False),hide_index=True,use_container_width=True)
 
@@ -207,16 +210,5 @@ elif page=='Methodology':
     section('04 / INTERPRETATION')
     st.write('The 198-event initial study and 196-event feature dataset are distinct analysis snapshots. The five-firm sample is selected; events are not independent; market regimes and unrelated news may affect returns. EPS surprise is only known after the earnings release and is **not** a pre-announcement predictor.')
     st.write('No causal mechanism, statistical significance, tradable alpha, or robust predictive power has been established. Historical data access and redistribution terms should be checked before publishing event-level records.')
-
-else:
-    heading('RESEARCH TERMINAL / ADVANCED WORKBENCH','Research workspace',
-            'Optional legacy tools and experiments, separate from the published empirical findings.')
-    try:
-        from legacy_workbench import render_legacy_workbench
-        render_legacy_workbench()
-    except ImportError:
-        st.info('The optional legacy_workbench.py module is not installed. The four main research sections remain fully functional.')
-    except Exception as exc:
-        st.warning(f'Legacy workbench could not be loaded: {exc}')
 
 st.markdown('<hr class="efl-rule"><div class="efl-small">EXPECTATIONS FRAGILITY LAB · INDEPENDENT EXPLORATORY EQUITY RESEARCH · NOT INVESTMENT ADVICE</div>',unsafe_allow_html=True)
